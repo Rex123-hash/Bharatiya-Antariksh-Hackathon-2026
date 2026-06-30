@@ -14,3 +14,13 @@ def rank_nodes_by_betweenness(graph: nx.Graph, weight: str | None = None):
     """
     scores = nx.betweenness_centrality(graph, weight=weight)
     return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+
+def find_bridge_edges(graph: nx.Graph):
+    """Edges whose removal increases the number of connected components."""
+    return list(nx.bridges(graph))
+
+
+def find_articulation_nodes(graph: nx.Graph):
+    """Nodes whose removal increases the number of connected components."""
+    return list(nx.articulation_points(graph))
