@@ -1,160 +1,133 @@
-# RouteResilience — Design Spec
+# Route Resilience design
 
-**Hackathon:** Bharatiya Antariksh Hackathon 2026 (ISRO × Hack2skill)
-**Challenge 4:** Route Resilience — Occlusion-Robust Road Extraction & Graph-Theoretic Criticality Analysis for Urban Mobility
-**Date:** 2026-06-30
-**Status:** Design approved; pending spec review
+Bharatiya Antariksh Hackathon 2026 (ISRO and Hack2skill), Challenge 4.
+Team Web Hackers.
 
----
+## Overview
 
-## 1. Summary
+Route Resilience takes occluded optical satellite imagery of a city and produces a
+connected road-network graph, then analyses that graph to find the junctions whose
+failure would break urban mobility and to simulate what happens during a disaster.
 
-An end-to-end pipeline that turns fragmented satellite road masks into a connected
-network graph, then ranks structural bottlenecks and simulates urban-collapse
-scenarios. Delivered as an interactive map web app anchored on Bengaluru.
+The work has two halves. The first recovers a connected road mask from imagery where
+tree canopy, building shadows and cloud have hidden parts of the road. The second turns
+that mask into a weighted graph and runs the resilience analysis on it.
 
-**Strategic wedge:** the graph-theoretic criticality + collapse-simulation engine
-(Module 2) is the star and the primary differentiator. Road segmentation (Module 1)
-is built to *serve* the graph — connectivity-first, not SOTA-chasing.
+Most of our effort goes into the second half. Road segmentation is a crowded research
+area, and we do not try to beat the best models there; we only need a mask clean enough
+to build a correct graph. The graph analysis is where the project is different, and it
+is what the demo is built around. We anchor the work on Bengaluru, the city named in the
+problem statement.
 
-This maps directly to the problem statement, which frames fragmented masks as
-"useless" for real-world use and defines the goal as transforming them into "a
-mathematically continuous, weighted graph to identify systemic bottlenecks and
-simulate urban collapse scenarios."
+## How it maps to the problem statement
 
----
-
-## 2. Problem statement alignment
-
-| PS requirement | How this design addresses it |
+| Requirement | How we address it |
 |---|---|
-| "See through" occlusions (canopy, shadow, cloud) | Module 1: context-aware segmentation with connectivity-aware loss |
-| Topologically connected masks (not "broken") | Connectivity loss + vectorization that enforces a connected graph |
-| Transform masks into a weighted graph | Bridge step: skeletonize → weighted nodes/edges |
-| Identify systemic bottlenecks | Module 2: betweenness centrality, bridges, articulation points |
-| Simulate urban collapse scenarios | Module 2: progressive removal → fragmentation curves; disaster overlays |
-| Real-world applicability (disaster response, traffic sim) | Disaster scenario engine + interactive app |
+| See through occlusions (canopy, shadow, cloud) | Transformer-based, occlusion-aware segmentation with a connectivity-aware loss |
+| Produce connected masks, not broken ones | Connectivity loss during training plus MST/disjoint-set healing during vectorization |
+| Turn masks into a weighted graph | Skeletonize, then build nodes (junctions) and weighted edges (segments) |
+| Identify systemic bottlenecks | Betweenness centrality, bridges and articulation points |
+| Simulate urban-collapse scenarios | Progressive node removal and disaster-zone overlays |
+| Be useful in practice (disaster response, traffic) | Disaster scenario engine and an interactive map app |
 
----
-
-## 3. Architecture
+## Pipeline
 
 ```
-① DATA LAYER
-   Bengaluru high-res optical tiles | OSM road network (ground truth) | Synthetic occlusion generator
-        ↓
-② MODULE 1 — Occlusion-robust segmentation  (supporting act)
-   Context-aware encoder–decoder + connectivity-aware loss → topologically connected road mask
-        ↓
-③ BRIDGE — Vectorization
-   Skeletonize mask → nodes (junctions) + edges (segments), weighted by length / travel-time / capacity
-        ↓
-④ MODULE 2 — Graph resilience engine  ★ THE STAR
-   Criticality  |  Collapse simulation  |  Disaster scenarios
-        ↓
-⑤ DELIVERABLE — Interactive map web app
-   pick tile → roads → graph → click/slide to collapse → live resilience metrics
+Imagery + ground truth  ->  Road extraction  ->  Topological reconstruction
+                                                          |
+                                                          v
+                            Interactive map  <-  Graph resilience engine
 ```
 
----
+## Road extraction
 
-## 4. Components
+A Transformer or attention-based segmentation network, optimised for recovering roads
+that are hidden under shadow and canopy (occlusion-recall). U-Net, UNet++ and DeepLabV3+
+are reasonable CNN baselines if needed.
 
-### 4.1 Data layer
-- **Primary imagery (official):** Sentinel-2 (10 m), Resourcesat LISS-IV (5.8 m), and
-  Cartosat-3 (high-res, provided during the finale). Anchored on Bengaluru.
-- **Ground truth & pre-training (official):** OpenStreetMap road vectors plus SpaceNet,
-  DeepGlobe, and OpenSatMap — auto-generated ground truth, no manual annotation.
-- **Synthetic occlusion generator:** paints canopy / shadow / cloud patches onto
-  clean tiles to produce paired occluded↔clean data. Enables a quantitative
-  robustness ("recovery") metric that natural occlusion alone cannot provide.
-  **Realism rules (not random rectangles):** shadows = elongated, semi-transparent
-  dark blobs placed beside buildings with a consistent sun angle; canopy = irregular
-  textured green blobs hugging roadsides with soft edges; clouds = large, feathered,
-  semi-transparent patches. **Preferred:** lift real cloud/shadow/canopy mask shapes
-  from other imagery and composite them, rather than synthesizing shapes from scratch.
+The loss is clDice (centerline Dice) combined with Dice or BCE. clDice is a published
+loss for thin connected structures such as roads and blood vessels, and it rewards
+keeping the centerline of a road unbroken. If that proves fiddly, the fallback is to
+train with plain Dice/BCE and reconnect small breaks afterwards with morphological
+closing and a gap-filling step that links nearby dangling road ends.
 
-### 4.2 Module 1 — Occlusion-robust segmentation (supporting act)
-- **Transformer-based / attention** segmentation network, optimised for occlusion-recall
-  (road recovery under shadow/canopy). U-Net / UNet++ / DeepLabV3+ are viable CNN baselines.
-- **Connectivity-aware loss = clDice (centerline Dice) combined with Dice/BCE.**
-  clDice is a published topology-preserving loss for thin connected structures (roads,
-  vessels); it rewards keeping the centerline unbroken.
-  - **Fallback (no new technique):** train with plain Dice/BCE, then reconnect breaks
-    in post-processing (morphological closing + graph gap-filling that links nearby
-    dangling road ends).
-- Explicit non-goal: beating segmentation benchmarks. Bar = "clean enough to build a
-  correct graph."
+The goal here is a mask that is clean enough to build a correct graph, not a record
+segmentation score.
 
-### 4.3 Bridge — Topological reconstruction (vectorization + healing)
-- Skeletonize the predicted mask (scikit-image / FilFinder).
-- **Topological "healing": Minimum Spanning Tree (MST) + Disjoint-Set (Union-Find)** to
-  merge fragments into one connected, routable graph. The official **Connectivity Ratio**
-  metric measures the LCC increase achieved by this healing step.
-- Construct graph: nodes = junctions, edges = road segments.
-- **Edge weights — length-first.** Default = road length (always available, reliable).
-  - **Cheap upgrade, no external data:** map OSM road-type tags (`motorway`, `primary`,
-    `residential`, …) → rough speed + lane count → estimated travel-time. Clearly
-    labeled as an estimate.
-  - Capacity stays optional; omitted if unreliable rather than faked.
+## Topological reconstruction
 
-### 4.4 Module 2 — Graph resilience engine (★ star)
-- **Criticality (Gatekeeper Nodes):** betweenness centrality (+ planned CFBC, α-centrality,
-  k-core) + bridges / articulation points → ranked "Gatekeeper Nodes" (single points of failure).
-- **Collapse simulation:** progressively remove top-k critical elements → fragmentation
-  curves (largest-connected-component %, global network-efficiency decay).
-- **Disaster scenarios:** overlay a flood zone or blocked corridor → reroute on the
-  graph.
-  - **Floor metrics (graph-only, no external data, always delivered):** number of
-    disconnected segments, drop in largest-connected-component %, increase in average
-    shortest-path length.
-  - **Impact overlay (enhancement):** population isolated (WorldPop / GHS-POP gridded
-    population) and facilities cut off (OSM `amenity=hospital`). Both free; dropped
-    without losing the core if data fights us.
+The predicted mask is skeletonized (scikit-image or FilFinder) and then "healed" into a
+single connected, routable graph using a Minimum Spanning Tree over the fragments and a
+Disjoint-Set (Union-Find) structure to merge them. The challenge's Connectivity Ratio
+metric measures exactly this: how much the largest connected component grows after the
+healing step.
 
-### 4.5 Deliverable — Interactive map web app
-- Select a tile → view extracted roads → flip to graph overlay (critical nodes
-  highlighted) → click a node or drag a "remove top-k" slider → watch network split
-  with live resilience metrics → switch disaster scenarios.
-- Frontend tech (Streamlit/Gradio vs light React + Leaflet/Mapbox) decided at build
-  time; both reach the same demo.
+Edges are weighted by road length, which is always available. As a cheap improvement
+that needs no extra data, OSM road-type tags (motorway, primary, residential, and so on)
+can be mapped to rough speeds and lane counts to estimate travel time. We label that as
+an estimate. Capacity is optional and is left out rather than faked if it is unreliable.
 
----
+## Graph resilience engine
 
-## 5. Success criteria
+This part is already built and tested. It works on a NetworkX graph and has four pieces:
 
-- **Module 1:** topology-aware score (e.g., APLS / connectivity metric) **plus** a
-  synthetic-occlusion recovery number ("recovers X% of road length hidden under
-  occlusion").
-- **Module 2:** criticality ranking validated against the real OSM graph; collapse
-  curves and scenario outputs reported quantitatively, not just visually.
-- **Demo:** a judge can interactively trigger a collapse and read changed metrics in
-  real time.
+- Criticality. Ranks junctions by betweenness centrality (the "Gatekeeper Nodes"), and
+  finds bridges and articulation points, which are the structural single points of
+  failure. Current-flow betweenness, alpha-centrality and k-core are planned additions
+  so the measures can be compared, as the challenge expects.
+- Collapse simulation. Removes the most critical node repeatedly, recomputing
+  betweenness each step, and records how connectivity decays (largest-component size and
+  global efficiency).
+- Disaster scenarios. Disables every road with an endpoint inside a flood or blocked
+  zone, then reports the connectivity loss: edges cut, number of disconnected
+  sub-networks, and the size of the largest remaining component.
+- Impact overlay (optional). Adds population isolated (WorldPop or GHS-POP) and
+  facilities cut off (OSM hospitals). The graph-only metrics above always work; the
+  overlay is dropped if the data proves hard to get, without losing the core result.
 
----
+## Datasets
 
-## 6. Scope boundaries (YAGNI — explicitly OUT)
+Primary imagery: Sentinel-2 (10 m), Resourcesat LISS-IV (5.8 m), and Cartosat-3
+(high-resolution, provided during the finale). Ground truth and pre-training:
+OpenStreetMap road vectors, SpaceNet, DeepGlobe and OpenSatMap. OSM gives auto-generated
+ground truth, so there is no manual annotation step.
 
-- ❌ SAR / multimodal fusion
-- ❌ Resilience *optimization* (tier 3) — appears in deck as "future scope" only
-- ❌ Multi-city generality (Bengaluru only)
-- ❌ Real-time / live traffic feeds
-- ❌ Beating segmentation SOTA benchmarks
+For evaluating occlusion-robustness we also generate synthetic occlusion: realistic
+shadow, canopy and cloud shapes composited onto clean tiles, which gives paired
+occluded and clean images and a clear before/after recovery number. The shapes are made
+to look like real occlusion (elongated shadows beside buildings, irregular canopy along
+roadsides, soft-edged clouds), or lifted directly from real imagery, rather than being
+random rectangles.
 
----
+## Evaluation
 
-## 7. Two-deadline plan
+These follow the challenge's official evaluation parameters.
 
-- **Idea Submission (~July 1, 2026):** this design → submission deck + four text
-  fields (brief, problem, tech stack, hackathon-experience). No code.
-- **Grand Finale (Aug 6–7, 2026):** build Module 1 → bridge → Module 2 → app, in that
-  dependency order, with Module 2 prioritized for polish.
+- IoU and Dice, with attention to occlusion-recall (roads recovered under shadow).
+- Generalisation across dense-urban, forested-suburban and rural terrain.
+- Length-complete / relaxed IoU, using a 3 to 5 pixel tolerance buffer.
+- Connectivity Ratio: the increase in the largest connected component after healing.
+  The engine computes this today.
+- Topological Accuracy: average path-length error against OSM. The engine computes this
+  today.
+- Resilience: connectivity loss, rerouting and travel-time increase as Gatekeeper Nodes
+  fail.
 
----
+## Out of scope
 
-## 8. Open items for build time
+We are deliberately not doing SAR or multimodal fusion, resilience optimization
+(suggesting where to add roads), multi-city generalisation, or live traffic feeds, and
+we are not trying to beat segmentation benchmarks. Resilience optimization is mentioned
+in the deck only as future work.
 
-- Finalize public optical imagery source for Bengaluru.
-- Choose segmentation backbone (clDice + Dice/BCE confirmed as the loss).
-- Choose frontend stack (Streamlit/Gradio vs React + map library).
-- Confirm WorldPop vs GHS-POP for the population overlay (both viable).
+## Status and timeline
+
+The graph resilience engine is built and covered by an automated test suite. For the
+idea-submission stage (around 1 July 2026) the deliverable is the deck and the written
+fields, not running code. For the finale (6 to 7 August 2026) the plan is to build the
+extraction model, the healing step and the app on top of the existing engine, in that
+order, keeping the engine as the most polished part.
+
+The approach aligns with ISRO's NNRMS mandate: making better use of indigenous
+Earth-observation satellites (Cartosat, Resourcesat LISS-IV) for GIS-based urban
+planning and infrastructure verification.

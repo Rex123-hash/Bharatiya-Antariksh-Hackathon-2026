@@ -188,7 +188,7 @@ python -m pytest -q
 routeresilience/graph/   core graph resilience engine
 examples/demo.py         runnable end-to-end demo
 tests/                   test suite (33 tests)
-docs/design/             design spec & implementation plan
+docs/design/             design notes
 assets/                  logo and visual assets
 ```
 
