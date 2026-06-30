@@ -61,10 +61,10 @@ simulate urban collapse scenarios."
 ## 4. Components
 
 ### 4.1 Data layer
-- **Primary imagery:** high-resolution optical tiles over Bengaluru. Exact public
-  provider finalized at build time.
-- **Ground truth:** OpenStreetMap road network for matching tiles — used as training
-  labels and for graph validation.
+- **Primary imagery (official):** Sentinel-2 (10 m), Resourcesat LISS-IV (5.8 m), and
+  Cartosat-3 (high-res, provided during the finale). Anchored on Bengaluru.
+- **Ground truth & pre-training (official):** OpenStreetMap road vectors plus SpaceNet,
+  DeepGlobe, and OpenSatMap — auto-generated ground truth, no manual annotation.
 - **Synthetic occlusion generator:** paints canopy / shadow / cloud patches onto
   clean tiles to produce paired occluded↔clean data. Enables a quantitative
   robustness ("recovery") metric that natural occlusion alone cannot provide.
@@ -75,7 +75,8 @@ simulate urban collapse scenarios."
   from other imagery and composite them, rather than synthesizing shapes from scratch.
 
 ### 4.2 Module 1 — Occlusion-robust segmentation (supporting act)
-- Encoder–decoder segmentation network.
+- **Transformer-based / attention** segmentation network, optimised for occlusion-recall
+  (road recovery under shadow/canopy). U-Net / UNet++ / DeepLabV3+ are viable CNN baselines.
 - **Connectivity-aware loss = clDice (centerline Dice) combined with Dice/BCE.**
   clDice is a published topology-preserving loss for thin connected structures (roads,
   vessels); it rewards keeping the centerline unbroken.
@@ -85,8 +86,11 @@ simulate urban collapse scenarios."
 - Explicit non-goal: beating segmentation benchmarks. Bar = "clean enough to build a
   correct graph."
 
-### 4.3 Bridge — Vectorization
-- Skeletonize the predicted mask.
+### 4.3 Bridge — Topological reconstruction (vectorization + healing)
+- Skeletonize the predicted mask (scikit-image / FilFinder).
+- **Topological "healing": Minimum Spanning Tree (MST) + Disjoint-Set (Union-Find)** to
+  merge fragments into one connected, routable graph. The official **Connectivity Ratio**
+  metric measures the LCC increase achieved by this healing step.
 - Construct graph: nodes = junctions, edges = road segments.
 - **Edge weights — length-first.** Default = road length (always available, reliable).
   - **Cheap upgrade, no external data:** map OSM road-type tags (`motorway`, `primary`,
@@ -95,8 +99,8 @@ simulate urban collapse scenarios."
   - Capacity stays optional; omitted if unreliable rather than faked.
 
 ### 4.4 Module 2 — Graph resilience engine (★ star)
-- **Criticality:** betweenness centrality + bridges / articulation points → ranked
-  bottleneck nodes and edges.
+- **Criticality (Gatekeeper Nodes):** betweenness centrality (+ planned CFBC, α-centrality,
+  k-core) + bridges / articulation points → ranked "Gatekeeper Nodes" (single points of failure).
 - **Collapse simulation:** progressively remove top-k critical elements → fragmentation
   curves (largest-connected-component %, global network-efficiency decay).
 - **Disaster scenarios:** overlay a flood zone or blocked corridor → reroute on the

@@ -55,9 +55,9 @@ graph to identify systemic bottlenecks and simulate urban-collapse scenarios.
 
 | Stage | What it does |
 |------|--------------|
-| **1. Multi-source urban data** | Optical satellite imagery as the primary input, with OpenStreetMap as ground truth. The design also accommodates aerial imagery, street-view, and LiDAR point clouds as auxiliary cues. |
-| **2. Occlusion-robust extraction** | A connectivity-aware deep-learning model recovers a *topologically connected* road mask through canopy, shadow, and cloud — built to feed the graph, not to chase pixel benchmarks. |
-| **3. Road graph construction** | Extracted road map → graph construction → topological cleaning, producing a weighted graph (nodes = junctions, edges = road segments weighted by length, with optional travel-time estimates from road type). |
+| **1. Multi-source urban data** | Primary imagery: Sentinel-2 (10 m), Resourcesat LISS-IV (5.8 m), Cartosat-3 (high-res). Ground truth & pre-training: OpenStreetMap, SpaceNet, DeepGlobe, OpenSatMap — zero manual annotation. |
+| **2. Occlusion-aware extraction** | A **Transformer-based**, connectivity-aware deep-learning model recovers a *topologically connected* road mask through canopy, shadow, vehicles and clutter — optimised for occlusion-recall, not just pixel benchmarks. |
+| **3. Topological reconstruction** | Extracted mask → **MST + Disjoint-Set (Union-Find) "healing"** → a routable weighted graph (nodes = junctions, edges = road segments weighted by length / travel-time). |
 | **4. Criticality analysis** | Rank critical bottlenecks using multiple complementary centrality measures and structural detectors. |
 | **5. Resilience under disruption** | Simulate progressive failure and disaster scenarios, measuring how the network fragments. |
 | **6. Interactive map app** | Pick an area → see roads → flip to graph → click to collapse the network → read live resilience metrics. |
@@ -68,29 +68,32 @@ that into a rigorous, interactive *resilience* tool. That is where this project 
 ## The pipeline
 
 ```
- Multi-source urban data  (optical · OSM · [aerial · street-view · LiDAR])
+ Imagery        Sentinel-2 · Resourcesat LISS-IV · Cartosat-3
+ Ground truth   OpenStreetMap · SpaceNet · DeepGlobe · OpenSatMap
                 │
                 ▼
- Occlusion-robust road extraction  (connectivity-aware deep learning)
+ Occlusion-aware extraction   (Transformer + connectivity-aware clDice loss)
                 │
                 ▼
- Road graph construction  (extract → construct → topological cleaning)
+ Topological reconstruction   (MST + Disjoint-Set "healing" → routable weighted graph)
                 │
                 ▼
  GRAPH RESILIENCE ENGINE  (the star)
-        ├─ Criticality       BC · CFBC · α-centrality · k-core · bridges · articulation points
-        ├─ Collapse sim      progressive removal → connectivity-decay curves
-        └─ Disaster zones    flood / blocked corridor → isolation impact
+        ├─ Structural intelligence   Gatekeeper Nodes (BC) · CFBC · α-centrality · k-core · bridges · articulation
+        ├─ Collapse simulation       progressive removal → connectivity-decay curves
+        └─ Disaster stress-test      flood / accident → isolation, rerouting & travel-time impact
                 │
                 ▼
- Interactive map web app
+ Interactive map app   (Resilience Index)
 ```
 
 ## Criticality analysis
 
-A resilient-routing analysis is only as good as its definition of "critical." Different
-centrality measures capture **complementary** aspects of how important a road segment
-is, so we rank critical segments with several and compare them:
+A resilient-routing analysis is only as good as its definition of "critical." The
+highest-importance junctions — the city's **"Gatekeeper Nodes"** — are single points of
+failure whose loss fragments mobility. Different centrality measures capture
+**complementary** aspects of how important a road segment is, so we rank critical
+segments with several and compare them:
 
 | Measure | What it captures |
 |---------|------------------|
@@ -116,20 +119,17 @@ facilities cut off) that turn abstract graph theory into planning decisions.
 
 ## Evaluation metrics
 
-The system is designed to be judged on quantitative, reproducible numbers rather than
-pretty pictures:
+Aligned with the challenge's official evaluation parameters:
 
 **Road extraction**
-- **mIoU ↑** — pixel-level segmentation accuracy.
-- **Connectivity (IoU on graph) ↑** — how well the *topology* matches ground truth, not just pixels.
-- **Breaks / km ↓** — number of false road breaks per kilometre (directly measures fragmentation).
+- **IoU & Dice — focus on Occlusion-Recall** — recovery of roads hidden under shadow and canopy.
+- **Generalisation** — accuracy across dense-urban, forested-suburban, and rural terrains.
+- **Length-Complete / Relaxed IoU** — a 3–5 px tolerance buffer so minor alignment shifts aren't penalised.
 
-**Criticality**
-- **Critical-segment overlap (Top 10%)** — Jaccard agreement between BC, CFBC, α-centrality, and k-core.
-
-**Resilience**
-- **Giant-component size vs disruption fraction** — the network-connectivity decay curve.
-- **Population isolated / facilities cut off** — real-world impact of a disruption.
+**Topology & resilience**
+- **Connectivity Ratio** — percentage increase in the largest connected component after the MST healing phase. *(The engine computes this directly.)*
+- **Topological Accuracy** — Average Path Length error vs OSM (shortest path between random point pairs, ground truth vs model graph). *(The engine computes this directly.)*
+- **Resilience Index** — connectivity loss, rerouting, and travel-time increase as Gatekeeper Nodes fail.
 
 ## What's built today
 
@@ -197,16 +197,19 @@ assets/                  logo and visual assets
 - [x] **Graph resilience engine** — criticality (BC), collapse simulation, disaster scenarios
 - [ ] Extended centralities — CFBC, α-centrality, k-core + critical-segment overlap (Jaccard)
 - [ ] Real OSM ingestion → run on actual Bengaluru roads
-- [ ] Occlusion-robust segmentation model (connectivity-aware loss) + synthetic-occlusion robustness benchmark
-- [ ] Mask → graph construction with topological cleaning
+- [ ] Occlusion-aware Transformer segmentation (connectivity-aware loss) + synthetic-occlusion robustness benchmark
+- [ ] Topological reconstruction — MST + Disjoint-Set "healing" → routable graph
 - [ ] Population / hospital impact overlay (people isolated, facilities cut off)
 - [ ] Interactive map web app
 - [ ] *Future scope:* resilience optimization — where to add a road for maximum resilience per rupee
 
 ## Technology stack
 
-**Core engine:** Python 3.11+ · NetworkX · pytest
-**Planned:** PyTorch (segmentation, connectivity-aware clDice + Dice/BCE) · scikit-image · OSMnx / Rasterio / GDAL · WorldPop · Leaflet / Mapbox · Streamlit / React
+**Core engine (built & tested):** Python 3.11+ · NetworkX · pytest
+**Road extraction:** PyTorch · U-Net / UNet++ / DeepLabV3+ / Transformer · connectivity-aware clDice loss · Albumentations · OpenCV
+**Graph & geospatial:** NetworkX · PyTorch Geometric (GNN) · MST + Disjoint-Sets · scikit-image / FilFinder · OSMnx · Rasterio / GDAL
+**Data:** Sentinel-2 · Resourcesat LISS-IV · Cartosat-3 · SpaceNet · DeepGlobe · OpenSatMap · OpenStreetMap
+**App & viz:** Leaflet.js / Mapbox · Streamlit · QGIS · Matplotlib
 
 ## Team
 
@@ -216,3 +219,7 @@ assets/                  logo and visual assets
 
 Built for the **Bharatiya Antariksh Hackathon 2026**, a national innovation initiative
 by the **Indian Space Research Organisation (ISRO)**, powered by **Hack2skill**.
+
+Aligned with ISRO's **NNRMS** mandate — maximising the downstream utility of indigenous
+Earth-observation satellites (Cartosat, Resourcesat LISS-IV) for GIS-based urban planning,
+e-governance, and infrastructure/route verification.
