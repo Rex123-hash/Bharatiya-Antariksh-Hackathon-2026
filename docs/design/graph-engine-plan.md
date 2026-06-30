@@ -1,6 +1,6 @@
 # Route Resilience — Graph Engine Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Implementation plan executed test-first (TDD): for each task, write the failing test, run it, implement the minimal code, re-run, then commit. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Module 2 graph resilience engine — criticality ranking, collapse simulation, and disaster-scenario metrics — as a pure-Python, fully tested library, independent of any imagery or model.
 
