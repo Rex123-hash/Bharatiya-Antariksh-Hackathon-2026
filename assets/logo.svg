@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Route Resilience logo">
+  <rect x="2" y="2" width="124" height="124" rx="26" fill="#1B244E"/>
+  <!-- road-network edges -->
+  <g stroke="#9DB2E0" stroke-width="3.2" stroke-linecap="round">
+    <line x1="34" y1="42" x2="64" y2="30"/>
+    <line x1="64" y1="30" x2="96" y2="46"/>
+    <line x1="34" y1="42" x2="42" y2="82"/>
+    <line x1="42" y1="82" x2="72" y2="70"/>
+    <line x1="96" y1="46" x2="100" y2="90"/>
+    <line x1="100" y1="90" x2="72" y2="70"/>
+  </g>
+  <!-- critical edges through the hub -->
+  <g stroke="#F26B21" stroke-width="4" stroke-linecap="round">
+    <line x1="64" y1="30" x2="72" y2="70"/>
+    <line x1="96" y1="46" x2="72" y2="70"/>
+  </g>
+  <!-- nodes -->
+  <g fill="#CFD9F2">
+    <circle cx="34" cy="42" r="6.5"/>
+    <circle cx="64" cy="30" r="6.5"/>
+    <circle cx="96" cy="46" r="6.5"/>
+    <circle cx="42" cy="82" r="6.5"/>
+    <circle cx="100" cy="90" r="6.5"/>
+  </g>
+  <!-- critical hub node -->
+  <circle cx="72" cy="70" r="11" fill="#F26B21" stroke="#FFFFFF" stroke-width="2.5"/>
+</svg>
