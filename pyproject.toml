@@ -1,0 +1,15 @@
+[project]
+name = "routeresilience"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["networkx>=3.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+# Disable globally-installed pytest-asyncio: its old version is incompatible with
+# pytest 9 and crashes package collection. This project uses no async tests.
+addopts = "-p no:asyncio"
